@@ -1,26 +1,42 @@
-BOARD=tang_nano_20K_LCD
-FAMILY=GW2A-18
-# DEVICE=GW2AR-LV18QN88C8/I7
-DEVICE=GW2A-LV18PG256C8/I7
+BOARD=tangnano9k
+FAMILY=GW1N-9C
+DEVICE=GW1NR-LV9QN88PC6/I5
 
-all: TOP.fs
+all: text.fs
 
 # Synthesis
-TOP.json: TOP.v
-	yosys -p "read_verilog TOP.v; read_verilog VGA_timing.v; read_verilog gowin_rpll/gowin_rpll.v; synth_gowin -top TOP -json TOP.json"
+text.json: top.v text.v screen.v
+	yosys -p "read_verilog screen.v text.v top.v; synth_gowin -top top -json text.json"
 
 # Place and Route
-TOP_pnr.json: TOP.json
-	nextpnr-gowin --json TOP.json --freq 27 --write TOP_pnr.json --device ${DEVICE} --family ${FAMILY} --cst ${BOARD}.cst
+text_pnr.json: text.json
+	nextpnr-gowin --json text.json --write text_pnr.json --freq 27 --device ${DEVICE} --family ${FAMILY} --cst tang_nano_20K_SPI_LCD.cst
 
 # Generate Bitstream
-TOP.fs: TOP_pnr.json
-	gowin_pack -d ${FAMILY} -o TOP.fs TOP_pnr.json
+text.fs: text_pnr.json
+	gowin_pack -d ${FAMILY} -o text.fs text_pnr.json
 
 # Program Board
-load: TOP.fs
-	#openFPGALoader -b ${BOARD} TOP.fs -f # Flash
-	openFPGALoader -b ${BOARD} TOP.fs # SRAM
+load: text.fs
+	openFPGALoader -b ${BOARD} text.fs -f
 
-.PHONY: load
-.INTERMEDIATE: TOP_pnr.json TOP.json
+# Generate Simulation
+text_test.o: text.v text_tb.v top.v screen.v
+	iverilog -o text_test.o -s test text.v text_tb.v top.v screen.v
+
+# Run Simulation
+test: text_test.o
+	vvp text_test.o
+
+# Generate Font
+font: font.hex
+font.hex:
+	node ./scripts/generate_font.js
+
+# Cleanup build artifacts
+clean:
+	rm text.vcd text.fs text_test.o
+
+.PHONY: load clean test
+.INTERMEDIATE: text_pnr.json text.json text_test.o
+
